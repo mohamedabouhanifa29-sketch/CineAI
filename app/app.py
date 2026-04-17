@@ -132,16 +132,25 @@ def save_app_rating(email, movie_id, title, genres, rating):
 # OMDB — Affiches et infos
 # ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=86400)
-def get_poster(title):
+def get_movie_info(title):
+    """Récupère toutes les infos d'un film depuis OMDB."""
     clean = title.split('(')[0].strip()
     try:
         r = requests.get(OMDB_BASE,
-            params={"t": clean, "apikey": OMDB_API_KEY, "type": "movie"}, timeout=6)
+            params={"t": clean, "apikey": OMDB_API_KEY, "type": "movie", "plot": "full"}, timeout=6)
         d = r.json()
-        if d.get("Poster") and d["Poster"] != "N/A":
-            return d["Poster"]
+        if d.get("Response") == "True":
+            return d
     except:
         pass
+    return {}
+
+@st.cache_data(ttl=86400)
+def get_poster(title):
+    info = get_movie_info(title)
+    poster = info.get("Poster")
+    if poster and poster != "N/A":
+        return poster
     return None
 
 @st.cache_data(ttl=86400)
@@ -291,6 +300,36 @@ def movie_card(movie_id, title, genres, email, score=None, rank=None):
         <div style="font-size:9px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
                     font-family:'JetBrains Mono',monospace;">{genres_short}</div>
     </div></div>""", unsafe_allow_html=True)
+
+    with st.expander("ℹ️ Infos du film"):
+        info = get_movie_info(title)
+        if info:
+            # Synopsis
+            plot = info.get("Plot", "")
+            if plot and plot != "N/A":
+                st.markdown(f'<div style="font-size:12px;color:#9ca3af;line-height:1.6;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">{plot}</div>', unsafe_allow_html=True)
+
+            # Métadonnées
+            meta = {
+                "🎬 Réalisateur" : info.get("Director","—"),
+                "🎭 Acteurs"     : info.get("Actors","—"),
+                "⏱️ Durée"       : info.get("Runtime","—"),
+                "🌍 Pays"        : info.get("Country","—"),
+                "🗣️ Langue"      : info.get("Language","—"),
+                "🏆 Awards"      : info.get("Awards","—"),
+                "⭐ Note IMDb"   : info.get("imdbRating","—"),
+                "👥 Votes IMDb"  : info.get("imdbVotes","—"),
+            }
+            for label, val in meta.items():
+                if val and val != "N/A":
+                    st.markdown(f"""
+                    <div style="display:flex;gap:8px;margin-bottom:5px;align-items:flex-start;">
+                        <span style="font-size:10px;color:#4b5563;font-family:'JetBrains Mono',monospace;
+                                     min-width:110px;padding-top:1px;">{label}</span>
+                        <span style="font-size:11px;color:white;">{val}</span>
+                    </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="font-size:12px;color:#4b5563;">Informations non disponibles.</div>', unsafe_allow_html=True)
 
     with st.expander("⭐ Noter ce film"):
         note = st.radio("Note", [1,2,3,4,5], format_func=lambda x:"⭐"*x,
