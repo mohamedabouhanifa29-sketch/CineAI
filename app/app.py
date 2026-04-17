@@ -484,7 +484,7 @@ with tab1:
 
 # ─── TAB 2 : CATALOGUE ─────────────────────────────────────
 with tab2:
-    col_g, col_s, col_n = st.columns([2, 2, 1])
+    col_g, col_s, col_n, col_y = st.columns([2, 2, 1, 1])
     with col_g:
         all_genres = sorted(set(
             g for gs in movies_df['genres'].str.split('|') for g in gs
@@ -495,13 +495,23 @@ with tab2:
         sort_by = st.selectbox("Trier par", ["Les mieux notés", "Les plus notés", "Récents"], label_visibility="collapsed")
     with col_n:
         n_display = st.selectbox("Afficher", [8, 12, 20], label_visibility="collapsed")
+    with col_y:
+        all_years = sorted(
+            movies_df['title'].str.extract(r'\((\d{4})\)')[0].dropna().unique().astype(int),
+            reverse=True
+        )
+        year_sel = st.selectbox("Année", ["Toutes"] + [str(y) for y in all_years], label_visibility="collapsed")
 
     divider()
 
-    # Filtrer
+    # Filtrer par genre
     df_cat = movies_df.copy()
     if genre_sel != "Tous":
         df_cat = df_cat[df_cat['genres'].str.contains(genre_sel, na=False)]
+
+    # Filtrer par année
+    if year_sel != "Toutes":
+        df_cat = df_cat[df_cat['title'].str.contains(f"({year_sel})", regex=False, na=False)]
 
     # Joindre les stats
     stats = ratings_df.groupby('movieId')['rating'].agg(mean='mean', count='count').reset_index()
@@ -588,19 +598,60 @@ with tab4:
             stars = "⭐" * info["rating"]
             date  = info["date"][:10]
             poster = get_poster(info["title"])
-            c1, c2, c3, c4 = st.columns([1, 4, 2, 1])
+
+            c1, c2, c3, c4, c5 = st.columns([1, 3, 2, 1, 1])
+
             with c1:
                 if poster:
                     st.image(poster, width=52)
                 else:
                     st.markdown('<div style="width:52px;height:72px;background:#1e1e1e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;">🎬</div>', unsafe_allow_html=True)
+
             with c2:
                 g = info.get("genres","").replace("|"," · ")[:40]
                 st.markdown(f'<div style="padding-top:6px;"><div style="font-size:13px;font-weight:600;color:white;">{info["title"]}</div><div style="font-size:10px;color:#4b5563;font-family:\'JetBrains Mono\',monospace;">{g}</div></div>', unsafe_allow_html=True)
+
             with c3:
                 st.markdown(f'<div style="font-size:14px;color:#f5c518;padding-top:10px;">{stars}</div>', unsafe_allow_html=True)
+
             with c4:
-                st.markdown(f'<div style="font-size:10px;color:#374151;font-family:\'JetBrains Mono\',monospace;padding-top:12px;">{date}</div>', unsafe_allow_html=True)
+                # Bouton modifier
+                if st.button("✏️ Modifier", key=f"edit_{mid_str}"):
+                    st.session_state[f"editing_{mid_str}"] = True
+
+            with c5:
+                # Bouton supprimer
+                if st.button("🗑️ Supprimer", key=f"del_{mid_str}"):
+                    data = _load_json(RATINGS_FILE)
+                    if email in data and mid_str in data[email]:
+                        del data[email][mid_str]
+                        _save_json(RATINGS_FILE, data)
+                        st.rerun()
+
+            # Formulaire de modification (apparaît sous le film)
+            if st.session_state.get(f"editing_{mid_str}"):
+                with st.container():
+                    st.markdown(f'<div style="background:#1e1e1e;border:1px solid rgba(229,9,20,0.3);border-radius:8px;padding:14px 18px;margin:6px 0 10px;">',unsafe_allow_html=True)
+                    nouvelle_note = st.radio(
+                        f"Nouvelle note pour {info['title'][:30]}",
+                        [1, 2, 3, 4, 5],
+                        format_func=lambda x: "⭐" * x,
+                        index=info["rating"] - 1,
+                        key=f"new_note_{mid_str}",
+                        horizontal=True
+                    )
+                    col_save, col_cancel = st.columns(2)
+                    with col_save:
+                        if st.button("✅ Enregistrer", key=f"save_edit_{mid_str}"):
+                            save_app_rating(email, int(mid_str), info["title"], info.get("genres",""), nouvelle_note)
+                            st.session_state[f"editing_{mid_str}"] = False
+                            st.rerun()
+                    with col_cancel:
+                        if st.button("❌ Annuler", key=f"cancel_{mid_str}"):
+                            st.session_state[f"editing_{mid_str}"] = False
+                            st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
             st.markdown('<div style="height:1px;background:rgba(255,255,255,0.04);margin:4px 0;"></div>', unsafe_allow_html=True)
 
 # ── DÉCONNEXION ──
